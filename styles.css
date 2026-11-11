@@ -1,6 +1,6 @@
 @font-face {
   font-family: "GensenTitle";
-  src: url("assets/fonts/gensen-rounded-tw-bold-title.woff2") format("woff2");
+  src: url("gensen-rounded-tw-bold-title.woff2") format("woff2");
   font-style: normal;
   font-weight: 700;
   font-display: swap;
@@ -8,7 +8,7 @@
 
 @font-face {
   font-family: "HuninnGameTitle";
-  src: url("assets/fonts/jf-openhuninn-game-title.woff2") format("woff2");
+  src: url("jf-openhuninn-game-title.woff2") format("woff2");
   font-style: normal;
   font-weight: 400;
   font-display: swap;
@@ -76,7 +76,7 @@ button:focus-visible {
   align-items: center;
   justify-content: center;
   padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
-  background: var(--leaf-dark) url("assets/backgrounds/aurora-map.png") center / cover no-repeat;
+  background: var(--leaf-dark) url("aurora-map.png") center / cover no-repeat;
 }
 
 .title-screen::before {
@@ -285,7 +285,7 @@ h1 {
   min-height: 0;
   margin: 0 auto;
   overflow: hidden;
-  background: #123477 url("assets/backgrounds/aurora-map.png") center / cover no-repeat;
+  background: #123477 url("aurora-map.png") center / cover no-repeat;
   border: 12px solid #4775b4;
   border-radius: 34px;
 }

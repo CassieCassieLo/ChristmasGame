@@ -10,7 +10,7 @@ const LEVELS = {
     dwellMin: 1300,
     dwellMax: 2800,
     correctGap: 1500,
-    background: "assets/backgrounds/aurora-stage.png",
+    background: "aurora-stage.png",
     words: [
       ["貓咪", "cat"], ["狗狗", "dog"], ["太陽", "sun"], ["書本", "book"], ["牛奶", "milk"],
       ["魚", "fish"], ["蘋果", "apple"], ["樹", "tree"], ["月亮", "moon"]
@@ -25,7 +25,7 @@ const LEVELS = {
     dwellMin: 850,
     dwellMax: 2100,
     correctGap: 1150,
-    background: "assets/backgrounds/aurora-stage.png",
+    background: "aurora-stage.png",
     words: [
       ["房子", "house"], ["水", "water"], ["開心的", "happy"], ["兔子", "rabbit"], ["花園", "garden"],
       ["學校", "school"], ["朋友", "friend"], ["花", "flower"], ["黃色的", "yellow"], ["窗戶", "window"],
@@ -41,7 +41,7 @@ const LEVELS = {
     dwellMin: 560,
     dwellMax: 1550,
     correctGap: 820,
-    background: "assets/backgrounds/aurora-stage.png",
+    background: "aurora-stage.png",
     words: [
       ["彩虹", "rainbow"], ["早晨", "morning"], ["陽光", "sunshine"], ["大象", "elephant"], ["三明治", "sandwich"],
       ["蝴蝶", "butterfly"], ["恐龍", "dinosaur"], ["冒險", "adventure"], ["精彩的", "wonderful"], ["一起", "together"],
@@ -51,24 +51,24 @@ const LEVELS = {
 };
 
 const STORAGE_KEY = "santa-spell-night-progress-v1";
-const ANSWER_SPRITE = "assets/sprites/santa-answer.png";
-const HIT_SPRITE = "assets/sprites/santa-kiss.png";
-const TIRED_SPRITE = "assets/sprites/santa-tired.png";
+const ANSWER_SPRITE = "santa-answer.png";
+const HIT_SPRITE = "santa-kiss.png";
+const TIRED_SPRITE = "santa-tired.png";
 const BGM_TRACKS = {
-  title: "sound/bg-lite.mp3",
-  map: "sound/bg-lite.mp3",
-  1: "sound/1-lite.mp3",
-  2: "sound/2-lite.mp3",
-  3: "sound/3-lite.mp3"
+  title: "bg-lite.mp3",
+  map: "bg-lite.mp3",
+  1: "1-lite.mp3",
+  2: "2-lite.mp3",
+  3: "3-lite.mp3"
 };
 const SFX_TRACKS = {
-  swing: "sound/swing.mp3",
-  bonk: "sound/pico-hammer.mp3",
-  correct: "sound/correct.mp3",
-  wrong: "sound/wrong.mp3",
-  pop: "sound/pop.mp3",
-  hoho: "sound/santa-hoho.mp3",
-  clear: "sound/christmas-cheer.mp3"
+  swing: "swing.mp3",
+  bonk: "pico-hammer.mp3",
+  correct: "correct.mp3",
+  wrong: "wrong.mp3",
+  pop: "pop.mp3",
+  hoho: "santa-hoho.mp3",
+  clear: "christmas-cheer.mp3"
 };
 
 const state = {
