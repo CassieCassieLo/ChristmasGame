@@ -1,0 +1,720 @@
+"use strict";
+
+const LEVELS = {
+  1: {
+    name: "聖誕村煙囪",
+    size: 3,
+    maxActive: 3,
+    spawnMin: 360,
+    spawnMax: 920,
+    dwellMin: 1300,
+    dwellMax: 2800,
+    correctGap: 1500,
+    background: "assets/backgrounds/aurora-stage.png",
+    words: [
+      ["貓咪", "cat"], ["狗狗", "dog"], ["太陽", "sun"], ["書本", "book"], ["牛奶", "milk"],
+      ["魚", "fish"], ["蘋果", "apple"], ["樹", "tree"], ["月亮", "moon"]
+    ]
+  },
+  2: {
+    name: "冰晶洞窟",
+    size: 4,
+    maxActive: 5,
+    spawnMin: 220,
+    spawnMax: 680,
+    dwellMin: 850,
+    dwellMax: 2100,
+    correctGap: 1150,
+    background: "assets/backgrounds/aurora-stage.png",
+    words: [
+      ["房子", "house"], ["水", "water"], ["開心的", "happy"], ["兔子", "rabbit"], ["花園", "garden"],
+      ["學校", "school"], ["朋友", "friend"], ["花", "flower"], ["黃色的", "yellow"], ["窗戶", "window"],
+      ["餅乾", "cookie"], ["家庭", "family"]
+    ]
+  },
+  3: {
+    name: "極光觀測站",
+    size: 5,
+    maxActive: 7,
+    spawnMin: 110,
+    spawnMax: 440,
+    dwellMin: 560,
+    dwellMax: 1550,
+    correctGap: 820,
+    background: "assets/backgrounds/aurora-stage.png",
+    words: [
+      ["彩虹", "rainbow"], ["早晨", "morning"], ["陽光", "sunshine"], ["大象", "elephant"], ["三明治", "sandwich"],
+      ["蝴蝶", "butterfly"], ["恐龍", "dinosaur"], ["冒險", "adventure"], ["精彩的", "wonderful"], ["一起", "together"],
+      ["慶祝", "celebrate"], ["電腦", "computer"], ["草莓", "strawberry"], ["巧克力", "chocolate"], ["雪花", "snowflake"]
+    ]
+  }
+};
+
+const STORAGE_KEY = "santa-spell-night-progress-v1";
+const ANSWER_SPRITE = "assets/sprites/santa-answer.png";
+const HIT_SPRITE = "assets/sprites/santa-kiss.png";
+const TIRED_SPRITE = "assets/sprites/santa-tired.png";
+const BGM_TRACKS = {
+  title: "sound/bg-lite.mp3",
+  map: "sound/bg-lite.mp3",
+  1: "sound/1-lite.mp3",
+  2: "sound/2-lite.mp3",
+  3: "sound/3-lite.mp3"
+};
+const SFX_TRACKS = {
+  swing: "sound/swing.mp3",
+  bonk: "sound/pico-hammer.mp3",
+  correct: "sound/correct.mp3",
+  wrong: "sound/wrong.mp3",
+  pop: "sound/pop.mp3",
+  hoho: "sound/santa-hoho.mp3",
+  clear: "sound/christmas-cheer.mp3"
+};
+
+const state = {
+  screen: "title",
+  unlocked: 1,
+  tutorialSeen: false,
+  sound: true,
+  level: 1,
+  lives: 5,
+  score: 0,
+  combo: 0,
+  time: 60,
+  running: false,
+  paused: false,
+  question: null,
+  previousQuestion: "",
+  spawnTimer: null,
+  despawnTimers: new Map(),
+  lastCorrectSpawn: 0,
+  clockTimer: null,
+  nextQuestionTimer: null,
+  hammerHideTimer: null,
+  activeAnswers: new Map(),
+  audio: null,
+  bgm: null,
+  bgmTrack: ""
+};
+
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => [...document.querySelectorAll(selector)];
+
+const screens = {
+  title: $("#title-screen"),
+  map: $("#map-screen"),
+  game: $("#game-screen")
+};
+const sfxTemplates = new Map();
+const imageAssetPromises = new Map();
+let clearCheer = null;
+let levelLoadToken = 0;
+
+function loadProgress() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    state.unlocked = Math.min(3, Math.max(1, Number(saved.unlocked) || 1));
+    state.tutorialSeen = Boolean(saved.tutorialSeen);
+    state.sound = saved.sound !== false;
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+}
+
+function saveProgress() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    unlocked: state.unlocked,
+    tutorialSeen: state.tutorialSeen,
+    sound: state.sound
+  }));
+}
+
+function showScreen(name) {
+  state.screen = name;
+  Object.entries(screens).forEach(([key, element]) => element.classList.toggle("is-active", key === name));
+  syncBgm();
+}
+
+function updateMap() {
+  $$(".level-button").forEach((button) => {
+    const level = Number(button.dataset.level);
+    button.disabled = level > state.unlocked;
+    button.setAttribute("aria-label", level > state.unlocked ? `${LEVELS[level].name}，尚未解鎖` : `進入${LEVELS[level].name}`);
+  });
+  $("#sound-button").textContent = state.sound ? "音" : "靜";
+}
+
+function openTutorial(onClose = null) {
+  const overlay = $("#dialog-overlay");
+  $("#dialog-body").innerHTML = `
+    <p>畫面上方會出現中文提示，Santa 會從煙囪裡舉著不同英文單字冒出來。</p>
+    <ol>
+      <li>先看懂中文提示，再找出正確英文拼字。</li>
+      <li>點擊或觸碰 Santa、英文答案牌或煙囪，都算敲中。</li>
+      <li>敲錯會失去一顆愛心，五顆都用完就要重新挑戰。</li>
+      <li>在60秒內拼對10個單字就能解鎖下一關！</li>
+    </ol>`;
+  overlay.hidden = false;
+  $("#dialog-button").focus();
+  $("#dialog-button").onclick = () => {
+    overlay.hidden = true;
+    state.tutorialSeen = true;
+    saveProgress();
+    if (onClose) onClose();
+  };
+}
+
+function goToMap(message = "") {
+  if (clearCheer) {
+    clearCheer.pause();
+    clearCheer.currentTime = 0;
+    clearCheer = null;
+  }
+  stopGame();
+  showScreen("map");
+  updateMap();
+  if (message) $("#map-status").textContent = message;
+}
+
+function preloadImage(path) {
+  if (imageAssetPromises.has(path)) return imageAssetPromises.get(path);
+  const promise = new Promise((resolve) => {
+    const image = new Image();
+    image.decoding = "async";
+    let finished = false;
+    const finish = (loaded) => {
+      if (finished) return;
+      finished = true;
+      resolve(loaded);
+    };
+    const timer = window.setTimeout(() => finish(false), 20000);
+    image.onload = async () => {
+      window.clearTimeout(timer);
+      try {
+        if (image.decode) await image.decode();
+      } catch {
+        // A successfully loaded image is still usable when explicit decode fails.
+      }
+      finish(true);
+    };
+    image.onerror = () => {
+      window.clearTimeout(timer);
+      finish(false);
+    };
+    image.src = path;
+  });
+  imageAssetPromises.set(path, promise);
+  return promise;
+}
+
+function warmGameAssets() {
+  [ANSWER_SPRITE, HIT_SPRITE, TIRED_SPRITE, ...Object.values(LEVELS).map((level) => level.background)]
+    .forEach((path) => preloadImage(path));
+}
+
+function primeLevelBgm(level) {
+  if (!state.sound) return Promise.resolve();
+  const track = BGM_TRACKS[level];
+  if (!track) return Promise.resolve();
+  if (state.bgmTrack === track && state.bgm) {
+    return state.bgm.play().catch(() => {});
+  }
+  pauseBgm();
+  state.bgm = new Audio(track);
+  state.bgm.loop = true;
+  state.bgm.preload = "auto";
+  state.bgm.volume = .01;
+  state.bgmTrack = track;
+  const playbackReady = state.bgm.play().catch(() => {});
+  const timeout = new Promise((resolve) => window.setTimeout(resolve, 12000));
+  return Promise.race([playbackReady, timeout]);
+}
+
+async function startLevel(level) {
+  if (level > state.unlocked) return;
+  const config = LEVELS[level];
+  const loadToken = ++levelLoadToken;
+  const loadingOverlay = $("#loading-overlay");
+  $("#loading-copy").textContent = `正在準備${config.name}……`;
+  loadingOverlay.hidden = false;
+  const bgmReady = primeLevelBgm(level);
+  await Promise.all([
+    preloadImage(config.background),
+    preloadImage(ANSWER_SPRITE),
+    preloadImage(HIT_SPRITE),
+    preloadImage(TIRED_SPRITE),
+    bgmReady
+  ]);
+  if (loadToken !== levelLoadToken) return;
+
+  state.level = level;
+  state.lives = 5;
+  state.score = 0;
+  state.combo = 0;
+  state.time = 60;
+  state.running = true;
+  state.paused = false;
+  state.question = null;
+  state.previousQuestion = "";
+  state.lastCorrectSpawn = 0;
+  state.activeAnswers.clear();
+  $("#feedback").classList.remove("show");
+  $("#feedback").textContent = "";
+  $("#game-background").src = config.background;
+  showScreen("game");
+  loadingOverlay.hidden = true;
+  buildGrid(config.size);
+  updateHud();
+  nextQuestion();
+  state.clockTimer = window.setInterval(tickClock, 1000);
+  playSfx("pop", .45);
+}
+
+function stopGame() {
+  levelLoadToken += 1;
+  $("#loading-overlay").hidden = true;
+  state.running = false;
+  state.paused = false;
+  window.clearTimeout(state.spawnTimer);
+  window.clearTimeout(state.nextQuestionTimer);
+  window.clearInterval(state.clockTimer);
+  state.spawnTimer = null;
+  state.nextQuestionTimer = null;
+  state.clockTimer = null;
+  $("#feedback").classList.remove("show");
+  clearWave();
+}
+
+function buildGrid(size) {
+  const grid = $("#hole-grid");
+  grid.innerHTML = "";
+  grid.style.setProperty("--cols", size);
+  grid.dataset.size = String(size);
+  for (let index = 0; index < size * size; index += 1) {
+    const row = Math.floor(index / size);
+    const column = index % size;
+    const hole = document.createElement("button");
+    hole.type = "button";
+    hole.className = "hole";
+    hole.dataset.index = String(index);
+    if (size === 5) {
+      const centerColumn = (size - 1) / 2;
+      const perspectiveOffset = -(column - centerColumn) * (size - 1 - row) * 4.5;
+      hole.style.setProperty("--perspective-x", `${perspectiveOffset}%`);
+    }
+    hole.setAttribute("aria-label", `第${index + 1}個煙囪`);
+    hole.innerHTML = `<img class="santa" src="${ANSWER_SPRITE}" alt="" draggable="false"><span class="answer-word"></span>`;
+    hole.addEventListener("click", (event) => {
+      if (event.detail === 0) handleHit(index);
+    });
+    grid.appendChild(hole);
+  }
+}
+
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function shuffle(items) {
+  const copy = [...items];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const target = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[target]] = [copy[target], copy[index]];
+  }
+  return copy;
+}
+
+function createQuestion() {
+  const words = LEVELS[state.level].words;
+  let word;
+  do {
+    const [clue, answer] = words[randomInt(0, words.length - 1)];
+    word = { clue, answer };
+  } while (word.answer === state.previousQuestion);
+  state.previousQuestion = word.answer;
+  return word;
+}
+
+function distractors(question, amount) {
+  return shuffle(LEVELS[state.level].words
+    .filter(([, answer]) => answer !== question.answer)
+    .map(([, answer]) => answer))
+    .slice(0, amount);
+}
+
+function nextQuestion() {
+  if (!state.running || state.paused) return;
+  state.question = createQuestion();
+  $("#question-text").textContent = state.question.clue;
+  // Give the player a short reading window before the first Santa appears.
+  state.lastCorrectSpawn = performance.now();
+  scheduleNextSpawn(true);
+}
+
+function scheduleNextSpawn(initial = false) {
+  if (!state.running || state.paused || !state.question) return;
+  const config = LEVELS[state.level];
+  const delay = initial ? randomInt(120, 480) : randomInt(config.spawnMin, config.spawnMax);
+  window.clearTimeout(state.spawnTimer);
+  state.spawnTimer = window.setTimeout(spawnOne, delay);
+}
+
+function spawnOne() {
+  if (!state.running || state.paused || !state.question) return;
+  const config = LEVELS[state.level];
+  const holes = $$(".hole");
+  const inactive = holes
+    .map((hole, index) => ({ hole, index }))
+    .filter(({ hole, index }) => !state.activeAnswers.has(index) && !hole.classList.contains("is-hit"));
+
+  if (state.activeAnswers.size < config.maxActive && inactive.length) {
+    const { hole, index } = inactive[randomInt(0, inactive.length - 1)];
+    const correctIsVisible = [...state.activeAnswers.values()].includes(state.question.answer);
+    const correctIsDue = !correctIsVisible && performance.now() - state.lastCorrectSpawn >= config.correctGap;
+    const useCorrect = correctIsDue || (!correctIsVisible && Math.random() < 0.28);
+    const usedAnswers = new Set(state.activeAnswers.values());
+    let answer = state.question.answer;
+
+    if (!useCorrect) {
+      const candidates = distractors(state.question, 8).filter((value) => !usedAnswers.has(value));
+      answer = candidates[0] ?? distractors(state.question, 1)[0];
+    } else {
+      state.lastCorrectSpawn = performance.now();
+    }
+
+    state.activeAnswers.set(index, answer);
+    hole.querySelector(".santa").src = ANSWER_SPRITE;
+    hole.querySelector(".answer-word").textContent = answer;
+    hole.setAttribute("aria-label", `英文答案 ${answer}`);
+    requestAnimationFrame(() => hole.classList.add("is-active"));
+    playSfx("pop", .22);
+
+    const dwell = randomInt(config.dwellMin, config.dwellMax);
+    const timer = window.setTimeout(() => hideHole(index), dwell);
+    state.despawnTimers.set(index, timer);
+  }
+
+  scheduleNextSpawn();
+}
+
+function hideHole(index) {
+  const hole = $(`.hole[data-index="${index}"]`);
+  if (!hole) return;
+  if (!state.activeAnswers.has(index)) {
+    finalizeHole(index);
+    return;
+  }
+
+  // Keep the answer hittable while Santa is retreating.
+  hole.classList.remove("is-active");
+  hole.classList.add("is-leaving");
+  window.clearTimeout(state.despawnTimers.get(index));
+  const timer = window.setTimeout(() => finalizeHole(index), 240);
+  state.despawnTimers.set(index, timer);
+}
+
+function finalizeHole(index) {
+  const hole = $(`.hole[data-index="${index}"]`);
+  state.activeAnswers.delete(index);
+  state.despawnTimers.delete(index);
+  if (!hole) return;
+  hole.classList.remove("is-active", "is-leaving", "is-hit");
+  hole.setAttribute("aria-label", `第${index + 1}個煙囪`);
+  hole.querySelector(".answer-word").textContent = "";
+}
+
+function clearWave() {
+  window.clearTimeout(state.spawnTimer);
+  state.spawnTimer = null;
+  state.despawnTimers.forEach((timer) => window.clearTimeout(timer));
+  state.despawnTimers.clear();
+  state.activeAnswers.clear();
+  $$(".hole").forEach((hole, index) => {
+    hole.classList.remove("is-active", "is-leaving", "is-hit");
+    hole.setAttribute("aria-label", `第${index + 1}個煙囪`);
+    const word = hole.querySelector(".answer-word");
+    if (word) word.textContent = "";
+  });
+}
+
+function handleHit(index) {
+  if (!state.running || state.paused || !state.activeAnswers.has(index)) return;
+  const answer = state.activeAnswers.get(index);
+  const correct = answer === state.question.answer;
+  const hole = $(`.hole[data-index="${index}"]`);
+  const image = hole.querySelector(".santa");
+  const word = hole.querySelector(".answer-word");
+  image.src = correct ? HIT_SPRITE : TIRED_SPRITE;
+  word.textContent = "";
+  hole.classList.remove("is-active", "is-leaving");
+  hole.classList.add("is-hit");
+  state.activeAnswers.delete(index);
+  window.clearTimeout(state.despawnTimers.get(index));
+  state.despawnTimers.delete(index);
+  playSfx("bonk", .72);
+
+  if (correct) {
+    window.clearTimeout(state.spawnTimer);
+    state.score += 1;
+    state.combo += 1;
+    showFeedback(state.combo >= 3 ? `${state.combo} 連擊！` : "啾咪！答對了！", true);
+    window.setTimeout(() => playSfx("correct", .7), 65);
+    window.setTimeout(() => playSfx("hoho", .52), 120);
+    updateHud();
+    if (state.score >= 10) {
+      state.nextQuestionTimer = window.setTimeout(completeLevel, 650);
+    } else {
+      state.nextQuestionTimer = window.setTimeout(() => {
+        clearWave();
+        nextQuestion();
+      }, 620);
+    }
+  } else {
+    state.lives -= 1;
+    state.combo = 0;
+    showFeedback("再試一次！", false);
+    window.setTimeout(() => playSfx("wrong", .68), 70);
+    updateHud();
+    window.setTimeout(() => finalizeHole(index), 420);
+    if (state.lives <= 0) {
+      state.nextQuestionTimer = window.setTimeout(() => failLevel("五顆愛心用完了，Santa 在主地圖等你再試一次！"), 620);
+    }
+  }
+}
+
+function tickClock() {
+  if (!state.running || state.paused) return;
+  state.time -= 1;
+  updateHud();
+  if (state.time <= 0) failLevel("時間到了！回到主地圖，準備好再挑戰一次吧。");
+  else if (state.time <= 10) playTone(300, .035, "square");
+}
+
+function updateHud() {
+  $("#time-value").textContent = String(state.time);
+  $("#score-value").textContent = `${state.score} / 10`;
+  $("#hearts").innerHTML = Array.from({ length: 5 }, (_, index) => `<span class="heart ${index >= state.lives ? "is-lost" : ""}" aria-hidden="true"></span>`).join("");
+  $("#hearts").setAttribute("aria-label", `剩餘${state.lives}顆愛心`);
+}
+
+function showFeedback(text, positive) {
+  const feedback = $("#feedback");
+  feedback.textContent = text;
+  feedback.classList.toggle("is-negative", !positive);
+  feedback.classList.remove("show");
+  void feedback.offsetWidth;
+  feedback.classList.add("show");
+}
+
+function completeLevel() {
+  const finishedLevel = state.level;
+  stopGame();
+  pauseBgm();
+  clearCheer = playSfx("clear", .72);
+  if (finishedLevel < 3) state.unlocked = Math.max(state.unlocked, finishedLevel + 1);
+  saveProgress();
+  $("#result-mark").textContent = finishedLevel === 3 ? "全部完成" : "過關";
+  $("#result-title").textContent = finishedLevel === 3 ? "三關全數完成！" : "挑戰成功！";
+  $("#result-copy").textContent = finishedLevel === 3
+    ? "你已經成為北極拼字達人，極光和 Santa 都為你歡呼！"
+    : `拼對10個單字，${LEVELS[finishedLevel + 1].name}已經解鎖。`;
+  $("#result-overlay").hidden = false;
+  $("#result-button").focus();
+}
+
+function failLevel(message) {
+  stopGame();
+  goToMap(message);
+  playTone(130, .2, "triangle");
+}
+
+function togglePause() {
+  if (!state.running) return;
+  state.paused = true;
+  window.clearTimeout(state.spawnTimer);
+  clearWave();
+  pauseBgm();
+  $("#pause-overlay").hidden = false;
+  $("#resume-button").focus();
+}
+
+function resumeGame() {
+  $("#pause-overlay").hidden = true;
+  state.paused = false;
+  syncBgm();
+  scheduleNextSpawn(true);
+}
+
+function positionHammer(event) {
+  const hammer = $("#hammer");
+  hammer.style.left = `${event.clientX}px`;
+  hammer.style.top = `${event.clientY}px`;
+}
+
+function hitAtPoint(clientX, clientY) {
+  if (!state.running || state.paused) return;
+
+  const candidates = $$(".hole")
+    .map((hole, index) => {
+      if (!state.activeAnswers.has(index)) return null;
+      const rect = hole.getBoundingClientRect();
+      const paddingX = Math.min(12, rect.width * .1);
+      const paddingY = Math.min(10, rect.height * .1);
+      const inside = clientX >= rect.left - paddingX
+        && clientX <= rect.right + paddingX
+        && clientY >= rect.top - paddingY
+        && clientY <= rect.bottom + paddingY;
+      if (!inside) return null;
+
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const distance = ((clientX - centerX) / rect.width) ** 2
+        + ((clientY - centerY) / rect.height) ** 2;
+      return { index, distance };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.distance - b.distance);
+
+  if (candidates.length) handleHit(candidates[0].index);
+}
+
+function swingHammer() {
+  const hammer = $("#hammer");
+  window.clearTimeout(state.hammerHideTimer);
+  hammer.classList.add("is-visible");
+  hammer.classList.remove("is-swinging");
+  void hammer.offsetWidth;
+  hammer.classList.add("is-swinging");
+  playSfx("swing", .48);
+  if (window.matchMedia("(pointer: coarse)").matches) {
+    state.hammerHideTimer = window.setTimeout(() => hammer.classList.remove("is-visible"), 340);
+  }
+}
+
+function pauseBgm() {
+  if (state.bgm) state.bgm.pause();
+}
+
+function primeSfx() {
+  if (sfxTemplates.size) return;
+  Object.entries(SFX_TRACKS).forEach(([name, path]) => {
+    const audio = new Audio(path);
+    audio.preload = "none";
+    sfxTemplates.set(name, audio);
+  });
+}
+
+function syncBgm() {
+  if (!state.sound || state.paused) {
+    pauseBgm();
+    return;
+  }
+
+  const track = state.screen === "game" ? BGM_TRACKS[state.level] : BGM_TRACKS[state.screen];
+  if (!track) return;
+  if (!state.bgm || state.bgmTrack !== track) {
+    pauseBgm();
+    state.bgm = new Audio(track);
+    state.bgm.loop = true;
+    state.bgm.volume = state.screen === "game" ? .24 : .3;
+    state.bgmTrack = track;
+  }
+  state.bgm.volume = state.screen === "game" ? .24 : .3;
+  state.bgm.play().catch(() => {});
+}
+
+function playSfx(name, volume = 1) {
+  if (!state.sound || !SFX_TRACKS[name]) return null;
+  primeSfx();
+  const sound = sfxTemplates.get(name).cloneNode();
+  sound.preload = "auto";
+  sound.volume = Math.min(1, Math.max(0, volume));
+  sound.play().catch(() => {});
+  return sound;
+}
+
+function playTone(frequency, duration, type) {
+  if (!state.sound) return;
+  try {
+    if (!state.audio) state.audio = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = state.audio.createOscillator();
+    const gain = state.audio.createGain();
+    oscillator.frequency.value = frequency;
+    oscillator.type = type;
+    gain.gain.setValueAtTime(.07, state.audio.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.001, state.audio.currentTime + duration);
+    oscillator.connect(gain).connect(state.audio.destination);
+    oscillator.start();
+    oscillator.stop(state.audio.currentTime + duration);
+  } catch {
+    state.sound = false;
+  }
+}
+
+function bindEvents() {
+  $("#start-button").addEventListener("click", () => {
+    primeSfx();
+    warmGameAssets();
+    showScreen("map");
+    updateMap();
+    openTutorial();
+  });
+
+  $("#reset-button").addEventListener("click", () => {
+    localStorage.removeItem(STORAGE_KEY);
+    state.unlocked = 1;
+    state.tutorialSeen = false;
+    state.sound = true;
+    updateMap();
+    $("#reset-button").textContent = "紀錄已重設";
+  });
+
+  $$(".level-button").forEach((button) => button.addEventListener("click", () => startLevel(Number(button.dataset.level))));
+  $("#tutorial-button").addEventListener("click", () => openTutorial());
+  $("#sound-button").addEventListener("click", () => {
+    state.sound = !state.sound;
+    saveProgress();
+    updateMap();
+    if (state.sound) {
+      syncBgm();
+      playSfx("correct", .36);
+    } else {
+      pauseBgm();
+    }
+  });
+  $("#pause-button").addEventListener("click", togglePause);
+  $("#exit-button").addEventListener("click", () => goToMap("已退出關卡，隨時可以重新挑戰。"));
+  $("#resume-button").addEventListener("click", resumeGame);
+  $("#pause-exit-button").addEventListener("click", () => {
+    $("#pause-overlay").hidden = true;
+    goToMap("已退出關卡，隨時可以重新挑戰。 ");
+  });
+  $("#result-button").addEventListener("click", () => {
+    $("#result-overlay").hidden = true;
+    goToMap("新關卡已解鎖，繼續前進吧！");
+  });
+
+  $("#game-scene").addEventListener("pointermove", (event) => {
+    positionHammer(event);
+    $("#hammer").classList.add("is-visible");
+  });
+  $("#game-scene").addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    positionHammer(event);
+    swingHammer();
+    hitAtPoint(event.clientX, event.clientY);
+  });
+  $("#game-scene").addEventListener("pointerleave", () => $("#hammer").classList.remove("is-visible"));
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && state.running && !state.paused) togglePause();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.screen === "game" && state.running) {
+      state.paused ? resumeGame() : togglePause();
+    }
+  });
+}
+
+loadProgress();
+bindEvents();
+updateMap();

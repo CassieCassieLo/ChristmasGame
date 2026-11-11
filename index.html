@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#071a45" />
+    <meta name="description" content="Santa Spell Night：在極光雪夜中，敲出正確英文拼字。" />
+    <title>Santa Spell Night</title>
+    <link rel="preload" href="assets/backgrounds/aurora-map.png" as="image" type="image/png" />
+    <link rel="preload" href="assets/sprites/santa-answer.png" as="image" type="image/png" />
+    <link rel="preload" href="assets/fonts/gensen-rounded-tw-bold-title.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="assets/fonts/jf-openhuninn-game-title.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="styles.css?v=20261110-aurora-spell" />
+  </head>
+  <body>
+    <main id="app" class="app-shell">
+      <section id="title-screen" class="screen title-screen is-active" aria-labelledby="game-title">
+        <div class="title-sign">
+          <div class="title-card">
+            <h1 id="game-title">
+              <span class="title-line title-line--main">Santa Spell</span>
+              <span class="title-line title-line--sub">Night</span>
+            </h1>
+            <p class="title-copy">
+              <span>看懂中文提示，找出正確英文拼字。</span>
+              <span><strong>60 秒</strong>內拼對 <strong>10 個單字</strong>就過關！</span>
+            </p>
+            <button id="start-button" class="primary-button" type="button">開始冒險</button>
+            <button id="reset-button" class="text-button" type="button">重設關卡紀錄</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="map-screen" class="screen map-screen" aria-labelledby="map-title">
+        <header class="map-header">
+          <div>
+            <h2 id="map-title">極光聖誕地圖</h2>
+          </div>
+          <div class="map-actions">
+            <button id="tutorial-button" class="round-button" type="button" aria-label="查看遊戲教學">?</button>
+            <button id="sound-button" class="round-button" type="button" aria-label="切換音效">音</button>
+          </div>
+        </header>
+
+        <div class="map-stage" data-ui>
+          <div class="level-anchor level-anchor--one">
+            <button class="level-button" type="button" data-level="1">
+              <span class="level-name">聖誕村煙囪</span>
+              <span class="level-detail">3 × 3 洞口</span>
+            </button>
+          </div>
+          <div class="level-anchor level-anchor--two">
+            <button class="level-button" type="button" data-level="2">
+              <span class="level-name">冰晶洞窟</span>
+              <span class="level-detail">4 × 4 洞口</span>
+            </button>
+          </div>
+          <div class="level-anchor level-anchor--three">
+            <button class="level-button" type="button" data-level="3">
+              <span class="level-name">極光觀測站</span>
+              <span class="level-detail">5 × 5 洞口</span>
+            </button>
+          </div>
+        </div>
+        <p id="map-status" class="map-status" aria-live="polite">從聖誕村開始，拼對單字就能解鎖下一座北極地標。</p>
+      </section>
+
+      <section id="game-screen" class="screen game-screen" aria-labelledby="question-text">
+        <div id="game-scene" class="game-scene" data-ui>
+          <img id="game-background" class="game-background" alt="" decoding="async" fetchpriority="high" />
+          <header class="hud">
+            <div id="hearts" class="hud-piece hearts" aria-label="剩餘愛心"></div>
+            <div class="hud-piece timer" aria-label="剩餘時間"><span aria-hidden="true">時間</span><strong id="time-value">60</strong></div>
+            <div class="hud-piece progress" aria-label="拼字進度"><span aria-hidden="true">拼對</span><strong id="score-value">0 / 10</strong></div>
+            <button id="pause-button" class="hud-button" type="button" aria-label="暫停遊戲">Ⅱ</button>
+            <button id="exit-button" class="hud-button" type="button" aria-label="退出關卡">×</button>
+          </header>
+
+          <div class="question-board" aria-live="polite">
+            <span class="question-label">中文提示</span>
+            <strong id="question-text">準備好了嗎？</strong>
+          </div>
+
+          <div id="hole-grid" class="hole-grid" aria-label="答案煙囪"></div>
+          <div id="feedback" class="feedback" aria-live="assertive"></div>
+          <img id="hammer" class="hammer" src="assets/sprites/mallet/clean-384.webp" alt="" draggable="false" decoding="async" />
+        </div>
+      </section>
+    </main>
+
+    <div id="dialog-overlay" class="overlay" hidden>
+      <section class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+        <img class="teacher" src="assets/sprites/santa-answer.png" alt="Santa 老師" decoding="async" />
+        <div class="dialog-copy">
+          <h2 id="dialog-title">Santa 的拼字任務</h2>
+          <div id="dialog-body"></div>
+          <button id="dialog-button" class="primary-button" type="button">我準備好了</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="result-overlay" class="overlay" hidden>
+      <section class="result-card" role="dialog" aria-modal="true" aria-labelledby="result-title">
+        <p id="result-mark" class="result-mark" aria-hidden="true">完成</p>
+        <h2 id="result-title">挑戰完成</h2>
+        <p id="result-copy"></p>
+        <button id="result-button" class="primary-button" type="button">回到主地圖</button>
+      </section>
+    </div>
+
+    <div id="pause-overlay" class="overlay" hidden>
+      <section class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+        <h2 id="pause-title">先休息一下</h2>
+          <p>時間和 Santa 都暫停了。</p>
+        <button id="resume-button" class="primary-button" type="button">繼續挑戰</button>
+        <button id="pause-exit-button" class="text-button" type="button">返回主地圖</button>
+      </section>
+    </div>
+
+    <div id="loading-overlay" class="overlay loading-overlay" hidden>
+      <section class="loading-card" role="status" aria-live="polite">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <h2>正在準備關卡</h2>
+        <p id="loading-copy">正在載入背景、角色與音樂……</p>
+      </section>
+    </div>
+
+    <noscript>這個遊戲需要啟用 JavaScript 才能遊玩。</noscript>
+    <script src="app.js?v=20261110-aurora-spell" defer></script>
+  </body>
+</html>
